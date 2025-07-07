@@ -1,0 +1,226 @@
+{
+    "timestamp": "2025-07-07T20:20:22.297074",
+    "parameters": {
+        "alpha_deg": 90.0,
+        "theta_deg": 0.0
+    },
+    "ray_direction_vector": [
+        0.0,
+        1.0,
+        6.123233995736766e-17
+    ],
+    "input_files": {
+        "skin_mesh": "thyroid_processed.obj",
+        "key_points": "keypoints_processed.obj",
+        "point_mapping": "keypoints_mapping.json"
+    },
+    "results_summary": {
+        "total_source_points": 15,
+        "rays_that_hit": 2
+    },
+    "intersections": [
+        {
+            "source_point_index": 0,
+            "source_point_name": "Aortic Valve",
+            "source_coord": [
+                0.01481867,
+                0.4726672,
+                0.00294977
+            ],
+            "hit": true,
+            "intersection_coord": [
+                0.01481867,
+                0.6502982372251483,
+                0.002949770000000011
+            ],
+            "face_id": 10955,
+            "distance": 0.17763103722514834
+        },
+        {
+            "source_point_index": 1,
+            "source_point_name": "Mitral Valve",
+            "source_coord": [
+                0.01877311,
+                0.4532922,
+                -0.01722631
+            ],
+            "hit": false,
+            "intersection_coord": null,
+            "face_id": null,
+            "distance": null
+        },
+        {
+            "source_point_index": 2,
+            "source_point_name": "Tricuspid Valve",
+            "source_coord": [
+                -0.00114038,
+                0.45355282,
+                0.01206159
+            ],
+            "hit": true,
+            "intersection_coord": [
+                -0.00114038,
+                0.6297789274684145,
+                0.012061590000000011
+            ],
+            "face_id": 11578,
+            "distance": 0.17622610746841444
+        },
+        {
+            "source_point_index": 3,
+            "source_point_name": "Pulmonary Valve",
+            "source_coord": [
+                0.02643276,
+                0.48393154,
+                0.01625739
+            ],
+            "hit": false,
+            "intersection_coord": null,
+            "face_id": null,
+            "distance": null
+        },
+        {
+            "source_point_index": 4,
+            "source_point_name": "Left Ventricle(LV)",
+            "source_coord": [
+                0.04642639,
+                0.44509442,
+                0.01230498
+            ],
+            "hit": false,
+            "intersection_coord": null,
+            "face_id": null,
+            "distance": null
+        },
+        {
+            "source_point_index": 5,
+            "source_point_name": "Right Ventricle(RV)",
+            "source_coord": [
+                0.01645421,
+                0.43979382,
+                0.03271563
+            ],
+            "hit": false,
+            "intersection_coord": null,
+            "face_id": null,
+            "distance": null
+        },
+        {
+            "source_point_index": 6,
+            "source_point_name": "Right Atrium",
+            "source_coord": [
+                -0.02312842,
+                0.46455197,
+                -0.00401603
+            ],
+            "hit": false,
+            "intersection_coord": null,
+            "face_id": null,
+            "distance": null
+        },
+        {
+            "source_point_index": 7,
+            "source_point_name": "Left Atrium",
+            "source_coord": [
+                -0.00290066,
+                0.46467663,
+                -0.0268197
+            ],
+            "hit": false,
+            "intersection_coord": null,
+            "face_id": null,
+            "distance": null
+        },
+        {
+            "source_point_index": 8,
+            "source_point_name": "Interventricular Septum",
+            "source_coord": [
+                0.04786646,
+                0.44736386,
+                0.03461284
+            ],
+            "hit": false,
+            "intersection_coord": null,
+            "face_id": null,
+            "distance": null
+        },
+        {
+            "source_point_index": 9,
+            "source_point_name": "Interatrial Septum",
+            "source_coord": [
+                -0.01999573,
+                0.46714581,
+                -0.01801147
+            ],
+            "hit": false,
+            "intersection_coord": null,
+            "face_id": null,
+            "distance": null
+        },
+        {
+            "source_point_index": 10,
+            "source_point_name": "Papillary Muscles",
+            "source_coord": [
+                0.03474694,
+                0.44383908,
+                0.01331031
+            ],
+            "hit": false,
+            "intersection_coord": null,
+            "face_id": null,
+            "distance": null
+        },
+        {
+            "source_point_index": 11,
+            "source_point_name": "Chordae Tendineae",
+            "source_coord": [
+                0.02391179,
+                0.45671459,
+                -0.01509928
+            ],
+            "hit": false,
+            "intersection_coord": null,
+            "face_id": null,
+            "distance": null
+        },
+        {
+            "source_point_index": 12,
+            "source_point_name": "Aortic Root & Ascending Aorta",
+            "source_coord": [
+                0.00643341,
+                0.4986137,
+                -0.00033102
+            ],
+            "hit": false,
+            "intersection_coord": null,
+            "face_id": null,
+            "distance": null
+        },
+        {
+            "source_point_index": 13,
+            "source_point_name": "Main Pulmonary Artery",
+            "source_coord": [
+                0.00836453,
+                0.49537533,
+                -0.02015677
+            ],
+            "hit": false,
+            "intersection_coord": null,
+            "face_id": null,
+            "distance": null
+        },
+        {
+            "source_point_index": 14,
+            "source_point_name": "Pericardium",
+            "source_coord": [
+                0.04129755,
+                0.46701153,
+                0.03105278
+            ],
+            "hit": false,
+            "intersection_coord": null,
+            "face_id": null,
+            "distance": null
+        }
+    ]
+}

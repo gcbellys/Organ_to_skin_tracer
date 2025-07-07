@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-射线追踪：从甲状腺关键点出发计算逆射线与皮肤模型的交点
+射线追踪主模块
+该模块负责执行从器官关键点到皮肤模型的射线追踪实验。
+它接受倾斜角(alpha)和方位角(theta)作为输入，以控制射线方向。
+结果会按照README.md中定义的结构进行保存。
 """
 
 import trimesh
@@ -8,239 +11,208 @@ import numpy as np
 import argparse
 import os
 import json
+from datetime import datetime
 from pathlib import Path
+import sys
 
+# 导入项目内的工具模块
+from geometry_utils import get_direction_from_angles
+from config import get_paths
 
-def get_direction_from_angles(alpha_deg, theta_deg):
-    """
-    根据给定的倾斜角(alpha)和方位角(theta)计算方向向量
-    
-    Args:
-        alpha_deg: 倾斜角(度)
-        theta_deg: 方位角(度)
-    
-    Returns:
-        np.ndarray: 方向向量
-    """
-    alpha_rad = np.deg2rad(alpha_deg)
-    theta_rad = np.deg2rad(theta_deg)
-    
-    # 标准参考系 - 修正：D_base应该是从前方指向后方的单位向量
-    D_base = np.array([0, 1, 0])  # 前方(Y+)指向后方(Y-)
-    V_up = np.array([0, 0, 1])    # 上方(Z+)
-    V_left = np.array([1, 0, 0])  # 左侧(X+)
-    
-    comp_base = np.cos(alpha_rad)
-    perp_magnitude = np.sin(alpha_rad)
-    comp_up = perp_magnitude * np.cos(theta_rad)
-    comp_left = perp_magnitude * np.sin(theta_rad)
-    
-    final_direction = (D_base * comp_base) + (V_up * comp_up) + (V_left * comp_left)
-    return final_direction
-
-
-def calculate_inverse_angles(alpha_deg, theta_deg):
-    """
-    计算逆射线的角度
-    
-    Args:
-        alpha_deg: 原始倾斜角(度)
-        theta_deg: 原始方位角(度)
-    
-    Returns:
-        tuple: (alpha1, theta1) 逆射线的角度
-    """
-    # 对于从前方射入的情况，我们需要修正计算
-    # 如果原始角度是正面射入(α=0, θ=0)，那么逆射线应该也是正面射入
-    if alpha_deg == 0 and theta_deg == 0:
-        return 0, 0
-    
-    # 其他情况：逆射线就是反向
-    alpha1 = 180 - alpha_deg
-    
-    # theta1 = theta + 180 (方位角旋转180度)
-    theta1 = (theta_deg + 180) % 360
-    
-    return alpha1, theta1
-
-
-def ray_trace_from_points(key_points_path, skin_mesh_path, alpha_deg, theta_deg, output_dir):
-    """
-    从关键点进行射线追踪
-    
-    Args:
-        key_points_path: 甲状腺关键点文件路径
-        skin_mesh_path: 皮肤模型文件路径
-        alpha_deg: 倾斜角(度)
-        theta_deg: 方位角(度)
-        output_dir: 输出目录
-    """
-    print(f"--- 开始射线追踪 ---")
-    print(f"关键点文件: {key_points_path}")
-    print(f"皮肤模型: {skin_mesh_path}")
-    print(f"原始角度: α={alpha_deg}°, θ={theta_deg}°")
-    
-    # 加载甲状腺关键点
-    print(f"\n加载甲状腺关键点...")
-    key_points = []
-    with open(key_points_path, 'r') as f:
+def load_key_points(file_path):
+    """从OBJ文件中加载顶点作为关键点。"""
+    points = []
+    with open(file_path, 'r') as f:
         for line in f:
             if line.startswith('v '):
                 parts = line.strip().split()
-                x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
-                key_points.append([x, y, z])
+                points.append([float(p) for p in parts[1:4]])
+    return np.array(points)
+
+def run_ray_tracing(source_organ_name, target_organ_name, alpha_deg, theta_deg):
+    """
+    执行从源器官关键点到目标器官模型的射线追踪。
+    """
+    print("--- 开始射线追踪实验 ---")
     
-    key_points = np.array(key_points)
-    print(f"加载了 {len(key_points)} 个关键点")
+    # 1. Get all necessary paths using the new config system
+    source_paths = get_paths(source_organ_name)
+    target_paths = get_paths(target_organ_name)
+
+    key_points_path = source_paths.get("processed_keypoints")
+    if not key_points_path or not os.path.exists(str(key_points_path)):
+        print(f"未找到预处理的关键点，将使用源器官模型本身作为点云: {source_paths['processed_model']}")
+        key_points_path = source_paths['processed_model']
+
+    skin_mesh_path = target_paths["processed_model"]
+    mapping_path = source_paths.get("keypoints_mapping")
+
+    print(f"加载目标模型: {skin_mesh_path}")
+    skin_mesh = trimesh.load(skin_mesh_path, force='mesh')
     
-    # 加载皮肤模型
-    print(f"加载皮肤模型...")
-    skin_mesh = trimesh.load(skin_mesh_path, process=False)
-    print(f"皮肤模型顶点数: {len(skin_mesh.vertices)}")
+    print(f"加载源关键点: {key_points_path}")
+    source_points = load_key_points(key_points_path)
+    print(f"加载了 {len(source_points)} 个关键点。")
+
+    point_names = []
+    if mapping_path and os.path.exists(str(mapping_path)):
+        print(f"加载名称映射文件: {mapping_path}")
+        with open(mapping_path, 'r', encoding='utf-8') as f:
+            mapping = json.load(f)
+        point_names = list(mapping.keys())
+        if len(point_names) != len(source_points):
+            point_names = [f"Point_{i+1}" for i in range(len(source_points))]
+    else:
+        point_names = [f"Point_{i+1}" for i in range(len(source_points))]
+
+    ray_direction = get_direction_from_angles(alpha_deg, theta_deg)
+    locations, index_ray, index_tri = skin_mesh.ray.intersects_location(
+        ray_origins=source_points,
+        ray_directions=np.tile(ray_direction, (len(source_points), 1))
+    )
     
-    # 计算逆射线角度
-    alpha1, theta1 = calculate_inverse_angles(alpha_deg, theta_deg)
-    print(f"逆射线角度: α1={alpha1}°, θ1={theta1}°")
-    
-    # 计算逆射线方向 - 从皮肤前方射向甲状腺
-    ray_direction = get_direction_from_angles(alpha1, theta1)
-    print(f"逆射线方向向量: {ray_direction}")
-    
-    # 验证射线方向：从前方射入应该是Y轴正方向
-    if alpha_deg == 0 and theta_deg == 0:
-        expected_direction = np.array([0, 1, 0])  # 从前方(Y+)射向后方(Y-)
-        print(f"期望的正面射入方向: {expected_direction}")
-        print(f"实际计算方向: {ray_direction}")
-        if not np.allclose(ray_direction, expected_direction):
-            print("警告：方向计算可能有问题！")
-    
-    # 进行射线追踪
-    print(f"\n开始射线追踪...")
-    intersections = []
-    point_names = ["重心", "X最小值", "X最大值", "Y最小值", "Y最大值", "Z最小值", "Z最大值"]
-    
-    for i, (point, name) in enumerate(zip(key_points, point_names)):
-        print(f"  处理点 {i+1}: {name} {point}")
-        
-        # 计算射线与皮肤模型的交点
-        locations, index_ray, index_tri = skin_mesh.ray.intersects_location(
-            ray_origins=[point],
-            ray_directions=[ray_direction]
-        )
-        
-        if len(locations) > 0:
-            # 取第一个交点（最近的点）
-            intersection = locations[0]
-            intersections.append({
-                'point_index': i,
-                'point_name': name,
-                'source_point': point.tolist(),
-                'intersection_point': intersection.tolist(),
-                'distance': np.linalg.norm(intersection - point)
+    results = []
+    hit_map = {i: [] for i in range(len(source_points))}
+    for loc, ray_idx, tri_idx in zip(locations, index_ray, index_tri):
+        hit_map[ray_idx].append((loc, tri_idx))
+
+    for i in range(len(source_points)):
+        result_entry = {
+            "source_point_index": i, "source_point_name": point_names[i],
+            "source_coord": source_points[i].tolist(), "hit": False,
+            "intersection_coord": None, "face_id": None, "distance": None
+        }
+        if i in hit_map and hit_map[i]:
+            locations_only = np.array([item[0] for item in hit_map[i]])
+            distances = np.linalg.norm(locations_only - source_points[i], axis=1)
+            closest_hit_index = np.argmin(distances)
+            result_entry.update({
+                "intersection_coord": locations_only[closest_hit_index].tolist(),
+                "face_id": int(hit_map[i][closest_hit_index][1]),
+                "distance": distances[closest_hit_index], "hit": True
             })
-            print(f"    找到交点: {intersection}, 距离: {np.linalg.norm(intersection - point):.6f}")
-        else:
-            print(f"    未找到交点")
-            intersections.append({
-                'point_index': i,
-                'point_name': name,
-                'source_point': point.tolist(),
-                'intersection_point': None,
-                'distance': None
-            })
+        results.append(result_entry)
+        
+    return results, ray_direction
+
+def save_results(output_path, results, params, ray_direction, skin_mesh_path, key_points_path, mapping_path=None):
+    """
+    按照项目规范保存所有结果。
+    """
+    # 确保输出目录存在
+    Path(output_path).mkdir(parents=True, exist_ok=True)
     
-    # 保存结果
-    print(f"\n保存结果...")
-    
-    # 创建按角度命名的子目录
-    angle_subdir = f"alpha_{int(alpha_deg)}_theta_{int(theta_deg)}"
-    result_dir = os.path.join(output_dir, angle_subdir)
-    os.makedirs(result_dir, exist_ok=True)
-    
-    # 保存JSON格式的详细结果
-    result_data = {
-        'original_angles': {'alpha': alpha_deg, 'theta': theta_deg},
-        'inverse_angles': {'alpha1': alpha1, 'theta1': theta1},
-        'ray_direction': ray_direction.tolist(),
-        'intersections': intersections,
-        'total_points': len(key_points),
-        'successful_intersections': len([x for x in intersections if x['intersection_point'] is not None])
+    # 1. 准备元数据
+    metadata = {
+        'timestamp': datetime.now().isoformat(),
+        'parameters': params,
+        'ray_direction_vector': ray_direction.tolist(),
+        'input_files': {
+            'skin_mesh': str(Path(skin_mesh_path).name),
+            'key_points': str(Path(key_points_path).name)
+        },
+        'results_summary': {
+            'total_source_points': len(results),
+            'rays_that_hit': sum(1 for r in results if r['hit'])
+        },
+        'intersections': results  # 包含所有信息的完整列表
     }
+
+    if mapping_path:
+        metadata['input_files']['point_mapping'] = str(Path(mapping_path).name)
     
-    json_path = os.path.join(result_dir, 'ray_trace_result.json')
+    # 2. 保存元数据 JSON 文件
+    json_path = Path(output_path) / "ray_trace_result.json"
     with open(json_path, 'w', encoding='utf-8') as f:
-        json.dump(result_data, f, indent=2, ensure_ascii=False)
+        json.dump(metadata, f, indent=4, ensure_ascii=False)
+    print(f"  - 元数据已保存: {json_path}")
     
-    # 保存交点坐标为OBJ文件
-    valid_intersections = [x for x in intersections if x['intersection_point'] is not None]
+    # 提取有效的交点
+    valid_intersections = [r for r in results if r['hit']]
+
+    # 3. 保存交点 OBJ 文件
     if valid_intersections:
-        obj_path = os.path.join(result_dir, 'intersections.obj')
-        with open(obj_path, 'w') as f:
-            f.write(f"# 射线追踪交点\n")
-            f.write(f"# 原始角度: α={alpha_deg}°, θ={theta_deg}°\n")
-            f.write(f"# 逆射线角度: α1={alpha1}°, θ1={theta1}°\n")
-            f.write(f"# 总点数: {len(valid_intersections)}\n\n")
-            
-            for intersection in valid_intersections:
-                point = intersection['intersection_point']
-                name = intersection['point_name']
-                f.write(f"v {point[0]:.6f} {point[1]:.6f} {point[2]:.6f}  # {name}\n")
-    
-    # 保存源点和交点的对应关系
+        obj_path = Path(output_path) / "intersections.obj"
+        with open(obj_path, 'w', encoding='utf-8') as f:
+            f.write(f"# 射线交点 from alpha={params['alpha_deg']}, theta={params['theta_deg']}\n")
+            for r in valid_intersections:
+                p = r['intersection_coord']
+                f.write(f"v {p[0]:.6f} {p[1]:.6f} {p[2]:.6f} # name: {r['source_point_name']}, face_id: {r['face_id']}\n")
+        print(f"  - 交点OBJ已保存: {obj_path}")
+
+    # 4. 保存源点-交点对 OBJ 文件
     if valid_intersections:
-        pairs_path = os.path.join(result_dir, 'ray_pairs.obj')
-        with open(pairs_path, 'w') as f:
-            f.write(f"# 射线源点和交点对\n")
-            f.write(f"# 原始角度: α={alpha_deg}°, θ={theta_deg}°\n\n")
-            
-            for intersection in valid_intersections:
-                source = intersection['source_point']
-                target = intersection['intersection_point']
-                name = intersection['point_name']
-                f.write(f"# {name}\n")
-                f.write(f"v {source[0]:.6f} {source[1]:.6f} {source[2]:.6f}  # 源点\n")
-                f.write(f"v {target[0]:.6f} {target[1]:.6f} {target[2]:.6f}  # 交点\n\n")
+        pairs_path = Path(output_path) / "ray_pairs.obj"
+        with open(pairs_path, 'w', encoding='utf-8') as f:
+            f.write(f"# 源点-交点对 from alpha={params['alpha_deg']}, theta={params['theta_deg']}\n")
+            vertex_counter = 1
+            for r in valid_intersections:
+                s = r['source_coord']
+                t = r['intersection_coord']
+                f.write(f"# Pair for: {r['source_point_name']}\n")
+                f.write(f"v {s[0]:.6f} {s[1]:.6f} {s[2]:.6f} # Source\n")
+                f.write(f"v {t[0]:.6f} {t[1]:.6f} {t[2]:.6f} # Target\n")
+                f.write(f"l {vertex_counter} {vertex_counter + 1}\n")
+                vertex_counter += 2
+        print(f"  - 射线对OBJ已保存: {pairs_path}")
     
-    print(f"结果已保存到: {result_dir}")
-    print(f"  JSON结果: {json_path}")
-    if valid_intersections:
-        print(f"  交点OBJ: {obj_path}")
-        print(f"  射线对OBJ: {pairs_path}")
-    
-    print(f"--- 射线追踪完成 ---")
-    print(f"成功找到 {len(valid_intersections)}/{len(key_points)} 个交点")
-    
-    return result_data
+    print("--- 结果保存完毕 ---")
 
 
 def main():
-    parser = argparse.ArgumentParser(description='从甲状腺关键点进行射线追踪')
-    parser.add_argument('key_points', help='甲状腺关键点文件路径')
-    parser.add_argument('skin_mesh', help='皮肤模型文件路径')
-    parser.add_argument('alpha', type=float, help='倾斜角(度)')
-    parser.add_argument('theta', type=float, help='方位角(度)')
-    parser.add_argument('output_dir', help='输出目录')
-    
+    parser = argparse.ArgumentParser(
+        description="从源器官向目标模型执行参数化射线追踪。"
+    )
+    parser.add_argument("--source", required=True, help="源器官的名称 (e.g., 'heart', 'thyroid').")
+    parser.add_argument("--target", default="skin", help="目标器官的名称 (默认为 'skin').")
+    parser.add_argument("--alpha", type=float, required=True, help="射线的倾斜角 (alpha)，单位：度。")
+    parser.add_argument("--theta", type=float, required=True, help="射线的方位角 (theta)，单位：度。")
+    parser.add_argument("--output_dir", default=None, help="保存结果的自定义目录。默认为 'output/results/<source>_to_<target>/'")
+
     args = parser.parse_args()
-    
-    # 检查输入文件
-    if not os.path.exists(args.key_points):
-        print(f"错误: 关键点文件不存在: {args.key_points}")
-        return
-    
-    if not os.path.exists(args.skin_mesh):
-        print(f"错误: 皮肤模型文件不存在: {args.skin_mesh}")
-        return
-    
-    # 进行射线追踪
-    result = ray_trace_from_points(
-        args.key_points,
-        args.skin_mesh,
+
+    # Correctly call run_ray_tracing with organ names
+    results, ray_direction = run_ray_tracing(
+        args.source,
+        args.target,
         args.alpha,
-        args.theta,
-        args.output_dir
+        args.theta
     )
 
+    if not results:
+        print("射线追踪未生成任何结果。")
+        return
+
+    # --- Prepare paths for saving results ---
+    source_paths = get_paths(args.source)
+    target_paths = get_paths(args.target)
+    
+    key_points_path = source_paths.get("processed_keypoints")
+    if not key_points_path or not os.path.exists(str(key_points_path)):
+        key_points_path = source_paths['processed_model']
+        
+    skin_mesh_path = target_paths['processed_model']
+    mapping_file = source_paths.get('keypoints_mapping')
+
+    if args.output_dir:
+        output_base_dir = args.output_dir
+    else:
+        output_base_dir = os.path.join(BASE_DIR, "output", "results", f"{args.source}_to_{args.target}")
+        
+    output_path_str = os.path.join(output_base_dir, f"alpha_{args.alpha}_theta_{args.theta}")
+    
+    save_results(
+        output_path_str,
+        results,
+        {"alpha_deg": args.alpha, "theta_deg": args.theta},
+        ray_direction,
+        skin_mesh_path,
+        key_points_path,
+        mapping_file
+    )
 
 if __name__ == "__main__":
+    # Add path to src for imports
+    sys.path.append(str(Path(__file__).resolve().parent))
+    from config import BASE_DIR
     main() 
